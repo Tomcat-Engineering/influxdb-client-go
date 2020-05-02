@@ -24,7 +24,7 @@ type WriteApiBlocking interface {
 
 // writeApiBlockingImpl implements WriteApiBlocking interface
 type writeApiBlockingImpl struct {
-	service *writeService
+	service writeService
 }
 
 // creates writeApiBlockingImpl for org and bucket with underlying client
@@ -35,7 +35,7 @@ func newWriteApiBlockingImpl(org string, bucket string, service http.Service, cl
 func (w *writeApiBlockingImpl) write(ctx context.Context, line string) error {
 	err := w.service.handleWrite(ctx, &batch{
 		batch:         line,
-		retryInterval: w.service.client.Options().RetryInterval(),
+		retryInterval: w.service.Options().RetryInterval(),
 	})
 	return err
 }
@@ -56,7 +56,7 @@ func (w *writeApiBlockingImpl) WriteRecord(ctx context.Context, line ...string) 
 }
 
 func (w *writeApiBlockingImpl) WritePoint(ctx context.Context, point ...*Point) error {
-	line, err := w.service.encodePoints(point...)
+	line, err := encodePoints(w.service.Options(), point...)
 	if err != nil {
 		return err
 	}

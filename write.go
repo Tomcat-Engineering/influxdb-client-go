@@ -30,7 +30,7 @@ type WriteApi interface {
 }
 
 type writeApiImpl struct {
-	service     *writeService
+	service     writeService
 	writeBuffer []string
 
 	writeCh      chan *batch
@@ -103,13 +103,13 @@ func (w *writeApiImpl) waitForFlushing() {
 
 func (w *writeApiImpl) bufferProc() {
 	logger.Info("Buffer proc started")
-	ticker := time.NewTicker(time.Duration(w.service.client.Options().FlushInterval()) * time.Millisecond)
+	ticker := time.NewTicker(time.Duration(w.service.Options().FlushInterval()) * time.Millisecond)
 x:
 	for {
 		select {
 		case line := <-w.bufferCh:
 			w.writeBuffer = append(w.writeBuffer, line)
-			if len(w.writeBuffer) == int(w.service.client.Options().BatchSize()) {
+			if len(w.writeBuffer) == int(w.service.Options().BatchSize()) {
 				w.flushBuffer()
 			}
 		case <-ticker.C:
@@ -202,7 +202,7 @@ func (w *writeApiImpl) WriteRecord(line string) {
 
 func (w *writeApiImpl) WritePoint(point *Point) {
 	//w.bufferCh <- point.ToLineProtocol(w.service.clientImpl.Options().Precision)
-	line, err := w.service.encodePoints(point)
+	line, err := encodePoints(w.service.Options(), point)
 	if err != nil {
 		logger.Errorf("point encoding error: %s\n", err.Error())
 	} else {

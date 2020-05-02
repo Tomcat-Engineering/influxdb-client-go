@@ -28,7 +28,14 @@ type batch struct {
 	retries       uint
 }
 
-type writeService struct {
+type writeService interface {
+	Options() *Options
+	handleWrite(ctx context.Context, batch *batch) error
+	writeBatch(ctx context.Context, batch *batch) error
+	writeUrl() (string, error)
+}
+
+type writeServiceImpl struct {
 	org              string
 	bucket           string
 	httpService      ihttp.Service
@@ -39,16 +46,20 @@ type writeService struct {
 	client           Client
 }
 
-func newWriteService(org string, bucket string, httpService ihttp.Service, client Client) *writeService {
+func (w *writeServiceImpl) Options() *Options {
+	return w.client.Options()
+}
+
+func newWriteService(org string, bucket string, httpService ihttp.Service, client Client) writeService {
 	logger.SetDebugLevel(client.Options().LogLevel())
 	retryBufferLimit := client.Options().RetryBufferLimit() / client.Options().BatchSize()
 	if retryBufferLimit == 0 {
 		retryBufferLimit = 1
 	}
-	return &writeService{org: org, bucket: bucket, httpService: httpService, client: client, retryQueue: newQueue(int(retryBufferLimit))}
+	return &writeServiceImpl{org: org, bucket: bucket, httpService: httpService, client: client, retryQueue: newQueue(int(retryBufferLimit))}
 }
 
-func (w *writeService) handleWrite(ctx context.Context, batch *batch) error {
+func (w *writeServiceImpl) handleWrite(ctx context.Context, batch *batch) error {
 	logger.Debug("Write proc: received write request")
 	batchToWrite := batch
 	retrying := false
@@ -96,7 +107,7 @@ func (w *writeService) handleWrite(ctx context.Context, batch *batch) error {
 	return nil
 }
 
-func (w *writeService) writeBatch(ctx context.Context, batch *batch) error {
+func (w *writeServiceImpl) writeBatch(ctx context.Context, batch *batch) error {
 	wUrl, err := w.writeUrl()
 	if err != nil {
 		logger.Errorf("%s\n", err.Error())
@@ -144,22 +155,7 @@ func (w *writeService) writeBatch(ctx context.Context, batch *batch) error {
 	return nil
 }
 
-func (w *writeService) encodePoints(points ...*Point) (string, error) {
-	var buffer bytes.Buffer
-	e := lp.NewEncoder(&buffer)
-	e.SetFieldTypeSupport(lp.UintSupport)
-	e.FailOnFieldErr(true)
-	e.SetPrecision(w.client.Options().Precision())
-	for _, point := range points {
-		_, err := e.Encode(point)
-		if err != nil {
-			return "", err
-		}
-	}
-	return buffer.String(), nil
-}
-
-func (w *writeService) writeUrl() (string, error) {
+func (w *writeServiceImpl) writeUrl() (string, error) {
 	if w.url == "" {
 		u, err := url.Parse(w.httpService.ServerApiUrl())
 		if err != nil {
@@ -179,6 +175,21 @@ func (w *writeService) writeUrl() (string, error) {
 		w.lock.Unlock()
 	}
 	return w.url, nil
+}
+
+func encodePoints(options *Options, points ...*Point) (string, error) {
+	var buffer bytes.Buffer
+	e := lp.NewEncoder(&buffer)
+	e.SetFieldTypeSupport(lp.UintSupport)
+	e.FailOnFieldErr(true)
+	e.SetPrecision(options.Precision())
+	for _, point := range points {
+		_, err := e.Encode(point)
+		if err != nil {
+			return "", err
+		}
+	}
+	return buffer.String(), nil
 }
 
 func precisionToString(precision time.Duration) string {
